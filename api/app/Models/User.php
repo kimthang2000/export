@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-class User extends Authenticatable
+class User extends Authenticatable implements \Tymon\JWTAuth\Contracts\JWTSubject
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
@@ -45,5 +45,37 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function getJWTIdentifier()
+    {
+        return $this->getKey();
+    }
+
+    public function getJWTCustomClaims(): array
+    {
+        return [];
+    }
+
+    public function roles()
+    {
+        return $this->belongsToMany(Role::class);
+    }
+
+    public function refreshTokens()
+    {
+        return $this->hasMany(RefreshToken::class);
+    }
+
+    public function hasPermission(string $permission): bool
+    {
+        foreach ($this->roles as $role) {
+            foreach ($role->permissions as $rolePermission) {
+                if ($rolePermission->name === $permission) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }
