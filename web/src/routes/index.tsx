@@ -4,33 +4,47 @@ import AuthLayout from '../layouts/AuthLayout';
 import Dashboard from '../pages/Dashboard';
 import Login from '../pages/auth/Login';
 import Register from '../pages/auth/Register';
+import ProtectedRoute from './ProtectedRoute';
+import PublicRoute from './PublicRoute';
 
 const router = createBrowserRouter([
   {
-    path: '/',
-    element: <MainLayout />,
+    // Bọc ProtectedRoute để bảo vệ các route bên trong
+    element: <ProtectedRoute />,
     children: [
       {
-        index: true,
-        element: <Dashboard />,
-      },
-      {
-        path: 'profile',
-        element: <div>Profile Page (Coming Soon)</div>,
+        path: '/',
+        element: <MainLayout />,
+        children: [
+          {
+            index: true,
+            element: <Dashboard />,
+          },
+          {
+            path: 'profile',
+            element: <div>Profile Page (Coming Soon)</div>,
+          },
+        ],
       },
     ],
   },
   {
-    path: '/',
-    element: <AuthLayout />,
+    // Bọc PublicRoute cho các route không cần đăng nhập
+    element: <PublicRoute />,
     children: [
       {
-        path: 'login',
-        element: <Login />,
-      },
-      {
-        path: 'register',
-        element: <Register />,
+        path: '/',
+        element: <AuthLayout />,
+        children: [
+          {
+            path: 'login',
+            element: <Login />,
+          },
+          {
+            path: 'register',
+            element: <Register />,
+          },
+        ],
       },
     ],
   },

@@ -3,36 +3,27 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
-use App\Models\Role;
-use App\Models\RefreshToken;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
+use App\Http\Requests\Api\LoginRequest;
+use App\Http\Requests\Api\RefreshTokenRequest;
+use App\Http\Requests\Api\RegisterRequest;
+use App\Services\AuthService;
+use Illuminate\Http\JsonResponse;
 
 class AuthController extends Controller
 {
-    public function register(Request $request)
+    protected AuthService $authService;
+
+    public function __construct(AuthService $authService)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:6|confirmed',
-        ]);
+        $this->authService = $authService;
+    }
 
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
-        ]);
-
-        $memberRole = Role::where('name', 'member')->first();
-        if ($memberRole) {
-            $user->roles()->attach($memberRole);
-        }
+    public function register(RegisterRequest $request): JsonResponse
+    {
+        $user = $this->authService->registerUser($request->validated());
 
         $token = auth('api')->login($user);
-        $refreshTokenStr = $this->generateRefreshToken($user);
+        $refreshTokenStr = $this->authService->generateRefreshToken($user);
 
         return response()->json([
             'access_token' => $token,
@@ -42,19 +33,14 @@ class AuthController extends Controller
         ], 201);
     }
 
-    public function login(Request $request)
+    public function login(LoginRequest $request): JsonResponse
     {
-        $credentials = $request->validate([
-            'email' => 'required|string|email',
-            'password' => 'required|string',
-        ]);
-
-        if (! $token = auth('api')->attempt($credentials)) {
+        if (! $token = auth('api')->attempt($request->validated())) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
 
         $user = auth('api')->user();
-        $refreshTokenStr = $this->generateRefreshToken($user);
+        $refreshTokenStr = $this->authService->generateRefreshToken($user);
 
         return response()->json([
             'access_token' => $token,
@@ -64,62 +50,29 @@ class AuthController extends Controller
         ]);
     }
 
-    public function refresh(Request $request)
+    public function refresh(RefreshTokenRequest $request): JsonResponse
     {
-        $request->validate(['refresh_token' => 'required|string']);
+        $tokens = $this->authService->refreshAccessToken($request->refresh_token);
 
-        $tokenStr = $request->refresh_token;
-
-        $refreshToken = RefreshToken::where('token', hash('sha256', $tokenStr))->first();
-
-        if (!$refreshToken || $refreshToken->revoked || $refreshToken->expires_at->isPast()) {
+        if (!$tokens) {
             return response()->json(['error' => 'Invalid or expired refresh token'], 401);
         }
 
-        $user = $refreshToken->user;
-        
-        $refreshToken->update(['revoked' => true]);
-
-        $newAccessToken = auth('api')->login($user);
-        $newRefreshTokenStr = $this->generateRefreshToken($user);
-
-        return response()->json([
-            'access_token' => $newAccessToken,
-            'refresh_token' => $newRefreshTokenStr,
+        return response()->json(array_merge($tokens, [
             'expires_in' => auth('api')->factory()->getTTL() * 60
-        ]);
+        ]));
     }
 
-    public function logout()
+    public function logout(): JsonResponse
     {
-        $user = auth('api')->user();
-        if ($user) {
-            $user->refreshTokens()->update(['revoked' => true]);
-        }
-        
-        auth('api')->logout();
+        $this->authService->logoutUser(auth('api')->user());
 
         return response()->json(['message' => 'Successfully logged out']);
     }
 
-    public function me()
+    public function me(): JsonResponse
     {
-        $requestInfo = request();
         $user = auth('api')->user()->load('roles.permissions');
         return response()->json($user);
-    }
-
-    protected function generateRefreshToken(User $user): string
-    {
-        $tokenStr = Str::random(60);
-        
-        RefreshToken::create([
-            'user_id' => $user->id,
-            'token' => hash('sha256', $tokenStr),
-            'expires_at' => now()->addDays(30),
-            'revoked' => false,
-        ]);
-
-        return $tokenStr;
     }
 }

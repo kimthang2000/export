@@ -4,33 +4,25 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use App\Models\Role;
-use App\Models\Permission;
 
 class RolesAndPermissionsSeeder extends Seeder
 {
+    /**
+     * Run the database seeds.
+     */
     public function run(): void
     {
-        $permissions = [
-            'create_post',
-            'edit_post',
-            'delete_post',
-            'view_post'
+        // Tạm thời chỉ khởi tạo các Role cơ bản, chưa làm Permission
+        $roles = [
+            'admin',
+            'member'
         ];
 
-        foreach ($permissions as $permission) {
-            Permission::firstOrCreate(['name' => $permission]);
+        foreach ($roles as $roleName) {
+            Role::firstOrCreate(['name' => $roleName]);
         }
 
-        $adminRole = Role::firstOrCreate(['name' => 'admin']);
-        $memberRole = Role::firstOrCreate(['name' => 'member']);
-
-        // Admin gets all permissions
-        $adminRole->permissions()->sync(Permission::all());
-
-        // Member gets only view_post
-        $viewPostPermission = Permission::where('name', 'view_post')->first();
-        if ($viewPostPermission) {
-            $memberRole->permissions()->sync([$viewPostPermission->id]);
-        }
+        // Hiển thị thông báo trên console khi chạy seed
+        $this->command->info('Init roles successfully!');
     }
 }
