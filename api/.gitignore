@@ -23,4 +23,4 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 vendor
-/docker/db/
+/docker-export/db/

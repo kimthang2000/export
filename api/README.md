@@ -1,59 +1,159 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Export API — Laravel REST API with JWT Auth & Import/Export Module
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Hệ thống REST API xây dựng trên Laravel 12, cung cấp authentication bằng JWT (access token + refresh token) kèm cơ chế RBAC, và module Import/Export chung cho phép các entity trong hệ thống dễ dàng tích hợp.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Tech Stack
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+| Layer | Công nghệ |
+|-------|-----------|
+| Framework | Laravel 12 |
+| Auth | JWT (tymon/jwt-auth) — access token 15 phút |
+| Refresh Token | Random string 60 ký tự, hash SHA-256, DB storage, rotation |
+| RBAC | roles + permissions (many-to-many) |
+| Excel | openspout/openspout v4 |
+| Queue | database driver (job batching) |
+| Database | MySQL 5.7 |
+| Container | Docker (php-fpm 8.2 + nginx + mysql) |
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+---
 
-## Learning Laravel
+## Setup
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+### 1. Yêu cầu
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- Docker & Docker Compose
+- Cổng `8080`, `3306`, `9000` không bị chiếm
 
-## Laravel Sponsors
+### 2. Khởi động
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+```bash
+# Build & start containers
+docker-compose -f docker-export/docker-compose.yaml up -d --build
 
-### Premium Partners
+# Cài đặt dependencies (nếu chưa có trong image)
+docker exec export composer install
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+# Tạo file .env từ mẫu
+cp .env.example .env
+# Cập nhật DB_HOST=mysql, DB_DATABASE=export, DB_USERNAME=root, DB_PASSWORD=export
 
-## Contributing
+# Generate app key & JWT secret
+docker exec export php artisan key:generate
+docker exec export php artisan jwt:secret
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+# Chạy migration & seeder
+docker exec export php artisan migrate --force
+docker exec export php artisan db:seed --force
 
-## Code of Conduct
+# Tạo storage symlink (nếu cần upload file)
+docker exec export php artisan storage:link
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+# Chạy queue worker (xử lý import/export)
+docker exec -d export php artisan queue:work --queue=default --tries=3 --timeout=300
+```
 
-## Security Vulnerabilities
+### 3. Kiểm tra
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```bash
+# Register user
+curl -X POST http://localhost:8080/api/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Admin","email":"admin@test.com","password":"password","password_confirmation":"password"}'
 
-## License
+# Login
+curl -X POST http://localhost:8080/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@test.com","password":"password"}'
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+---
+
+## API Endpoints
+
+### Authentication
+
+| Method | Endpoint | Auth | Mô tả |
+|--------|----------|------|-------|
+| POST | `/api/register` | No | Đăng ký, trả về access_token + refresh_token |
+| POST | `/api/login` | No | Đăng nhập, trả về cặp token |
+| POST | `/api/refresh` | No | Refresh token (rotation) |
+| POST | `/api/logout` | Bearer | Revoke refresh token + invalidate JWT |
+| GET | `/api/me` | Bearer | Thông tin user kèm roles & permissions |
+
+### Import
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| POST | `/api/import/{module}` | Upload file CSV/XLSX để import |
+| GET | `/api/import/{module}/status/{id}` | Tra cứu trạng thái import |
+
+Request mẫu:
+```bash
+curl -X POST http://localhost:8080/api/import/users \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@users.csv" \
+  -F 'options={"update_existing":true}'
+```
+
+### Export
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| POST | `/api/export/{module}` | Tạo yêu cầu export (async, queue) |
+| GET | `/api/export/{module}/preview` | Xem trước 5 dòng + columns |
+| GET | `/api/export/{module}/status/{id}` | Tra cứu trạng thái export |
+
+Request mẫu:
+```json
+POST /api/export/users
+{
+  "format": "csv",
+  "columns": ["id", "name", "email"],
+  "filters": [
+    { "field": "created_at", "operator": "between", "value": ["2025-01-01", "2025-12-31"] },
+    { "field": "name", "operator": "like", "value": "John" }
+  ]
+}
+```
+
+### Generic — Import/Export
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| GET | `/api/import-export/modules` | Danh sách module đã đăng ký |
+| GET | `/api/import-export/{id}` | Chi tiết job (status, progress, files) |
+| GET | `/api/import-export/{id}/download?type=result` | Download file kết quả |
+| GET | `/api/import-export/{id}/download?type=error` | Download file log lỗi |
+| GET | `/api/import-export/{id}/logs?level=error` | Paginated row-level logs |
+
+---
+
+## Database Schema
+
+### import_exports
+| Column | Type | Mô tả |
+|--------|------|-------|
+| type | enum | `import` / `export` |
+| module | string | `users`, `products`, ... |
+| status | enum | `pending` → `processing` → `completed` / `failed` |
+| file_format | string | `csv` / `xlsx` |
+| total_rows / processed_rows / failed_rows | uint | Progress tracking |
+| options | json | Config đầu vào |
+
+### import_export_files
+| Column | Type | Mô tả |
+|--------|------|-------|
+| type | enum | `source` (file upload), `result` (file xuất), `error` (log lỗi) |
+| file_path | string | Đường dẫn trên disk |
+| file_size | bigint | Dung lượng |
+
+### import_export_logs
+| Column | Type | Mô tả |
+|--------|------|-------|
+| import_export_id | FK | Belongs to job |
+| row_index | uint | Dòng số mấy trong file |
+| level | enum | `info` / `warning` / `error` |
+| message | text | Nội dung lỗi |
+| context | json | Giá trị gốc của dòng |
