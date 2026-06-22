@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  export:
+    build: ./php82
+    container_name: export
+    ports:
+      - "9000:9000"
+    #mem_limit: 512MB
+    volumes:
+      - ../:/var/www/html
+      - ./php82/custom-php.ini:/usr/local/etc/php/conf.d/custom-php.ini
+    networks:
+      - app-network
+
+  web:
+    image: nginx:latest
+    container_name: nginx_export
+    ports:
+      - "8080:80"
+    volumes:
+      - ../:/var/www/html
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - export
+    networks:
+      - app-network
+
+  mysql:
+    image: mysql:5.7
+    container_name: mysql_export
+    restart: always
+    mem_limit: 512MB
+    environment:
+      MYSQL_DATABASE: export
+      MYSQL_ROOT_PASSWORD: export
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./db/dbdata:/var/lib/mysql
+      - ./db/my.cnf:/etc/mysql/conf.d/my.cnf
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+          max-file: "5"
+          max-size: "10m"
+
+networks:
+  app-network:
+    driver: bridge
